@@ -1,127 +1,149 @@
 import pandas as pd
 from tqdm import tqdm
 
-# Use a relative import to pull in check_hand_ from the same PoET package
-# Make sure `utils.py` or `utils/__init__.py` has the function `check_hand_` defined.
+# Import check_hand_ from your poet_utils module.
 from .poet_utils import check_hand_
 
+def extract_marker_data(pose_estimation, marker_name):
+    """
+    Given the multi-index DataFrame `pose_estimation` and a marker name,
+    this function extracts the available coordinate data (x, y, and z if present)
+    and returns a dictionary mapping new column names to the corresponding series.
+    """
+    data = {}
+    for coord in ['x', 'y', 'z']:
+        if (marker_name, coord) in pose_estimation.columns:
+            new_col = f"marker_{marker_name}_{coord}"
+            data[new_col] = pose_estimation[(marker_name, coord)]
+    return data
 
 def extract_tremor(pc):
-    # define set of distance for analysing tremor
+    # Define markers for general tremor analysis.
     marker_features = {
         'right': [
-            ['index_finger_tip_right','x'], ['index_finger_tip_right','y'],  # kinematic
-            ['middle_finger_tip_right','x'], ['middle_finger_tip_right','y'], # postural
-            ['right_elbow','x'], ['right_elbow','y']                          # proximal
+            'index_finger_tip_right',
+            'middle_finger_tip_right',
+            'right_elbow'
         ],
         'left': [
-            ['index_finger_tip_left','x'], ['index_finger_tip_left','y'],   # kinematic
-            ['middle_finger_tip_left','x'], ['middle_finger_tip_left','y'], # postural
-            ['left_elbow','x'], ['left_elbow','y']                          # proximal
+            'index_finger_tip_left',
+            'middle_finger_tip_left',
+            'left_elbow'
         ]
     }
 
     print('Extracting tremor ... ')
-    for patient in tqdm(pc.patients, total=len(pc.patients)):
-        
-        # identify tracked hand
-        hands = check_hand_(patient)    
-        
-        # load their data
+    for patient in pc.patients:
+        hands = check_hand_(patient)
         pose_estimation = patient.pose_estimation
-        
-        # define structural features to compute
-        structural_features = pd.DataFrame(index=pose_estimation.index)
+        # Create a new DataFrame for the computed kinematic features,
+        # but do not overwrite the original data.
+        kinematic_features = pd.DataFrame(index=pose_estimation.index)
 
-        # loop over the chosen hands
         for hand in hands:
-            features = marker_features[hand]
-            for f in features:
-                structural_features.loc[:, 'marker_' + '_'.join(f)] = pose_estimation[(f[0], f[1])]
-        
-        # store kinematics 
-        patient.structural_features = structural_features    
-    
+            for marker in marker_features[hand]:
+                marker_data = extract_marker_data(pose_estimation, marker)
+                for col_name, series in marker_data.items():
+                    kinematic_features[col_name] = series
+
+        # Store kinematic features in a separate attribute.
+        patient.kinematic_features = kinematic_features
+
     return pc
 
 
 def extract_kinematic_tremor(pc):
-    # define set of distance for analysing tapping
     marker_features = {
-        'right': [
-            ['index_finger_tip_right','x'], ['index_finger_tip_right','y']
-        ],
-        'left': [
-            ['index_finger_tip_left','x'], ['index_finger_tip_left','y']
-        ]
+        'right': ['index_finger_tip_right'],
+        'left': ['index_finger_tip_left']
     }
 
     print('Extracting intention tremor ... ')
     for patient in tqdm(pc.patients, total=len(pc.patients)):
-        
-        hands = check_hand_(patient)    
+        hands = check_hand_(patient)
         pose_estimation = patient.pose_estimation
         structural_features = pd.DataFrame(index=pose_estimation.index)
 
         for hand in hands:
-            features = marker_features[hand]
-            for f in features:
-                structural_features.loc[:, 'marker_' + '_'.join(f)] = pose_estimation[(f[0], f[1])]
+            for marker in marker_features[hand]:
+                marker_data = extract_marker_data(pose_estimation, marker)
+                for col_name, series in marker_data.items():
+                    structural_features[col_name] = series
 
-        patient.structural_features = structural_features    
-    
+        patient.structural_features = structural_features
+
     return pc
-
 
 def extract_postural_tremor(pc):
     marker_features = {
-        'right': [
-            ['middle_finger_tip_right','x'], ['middle_finger_tip_right','y']
-        ],
-        'left': [
-            ['middle_finger_tip_left','x'], ['middle_finger_tip_left','y']
-        ]
+        'right': ['middle_finger_tip_right'],
+        'left': ['middle_finger_tip_left']
     }
 
     print('Extracting postural tremor ... ')
     for patient in tqdm(pc.patients, total=len(pc.patients)):
-        
-        hands = check_hand_(patient)    
+        hands = check_hand_(patient)
         pose_estimation = patient.pose_estimation
         structural_features = pd.DataFrame(index=pose_estimation.index)
 
         for hand in hands:
-            features = marker_features[hand]
-            for f in features:
-                structural_features.loc[:, 'marker_' + '_'.join(f)] = pose_estimation[(f[0], f[1])]
+            for marker in marker_features[hand]:
+                marker_data = extract_marker_data(pose_estimation, marker)
+                for col_name, series in marker_data.items():
+                    structural_features[col_name] = series
 
-        patient.structural_features = structural_features    
+        patient.structural_features = structural_features
 
     return pc
 
-
 def extract_proximal_tremor(pc):
+    """
+    Extract proximal tremor features using shoulder and elbow markers.
+    For the right hand: uses 'right_shoulder' and 'right_elbow'.
+    For the left hand: uses 'left_shoulder' and 'left_elbow'.
+    """
     marker_features = {
-        'right': [
-            ['right_elbow','x'], ['right_elbow','y']
-        ],
-        'left': [
-            ['left_elbow','x'], ['left_elbow','y']
-        ]
+        'right': ['right_shoulder', 'right_elbow'],
+        'left': ['left_shoulder', 'left_elbow']
     }
 
     print('Extracting proximal tremor ... ')
     for patient in tqdm(pc.patients, total=len(pc.patients)):
-        
-        hands = check_hand_(patient)    
+        hands = check_hand_(patient)
         pose_estimation = patient.pose_estimation
         structural_features = pd.DataFrame(index=pose_estimation.index)
-
+        
         for hand in hands:
-            features = marker_features[hand]
-            for f in features:
-                structural_features.loc[:, 'marker_' + '_'.join(f)] = pose_estimation[(f[0], f[1])]
+            for marker in marker_features[hand]:
+                marker_data = extract_marker_data(pose_estimation, marker)
+                for col_name, series in marker_data.items():
+                    structural_features[col_name] = series
+        patient.structural_features = structural_features
 
-        patient.structural_features = structural_features    
+    return pc
+
+def extract_distal_tremor(pc):
+    """
+    Extract distal tremor features using elbow and wrist markers.
+    For the right hand: uses 'right_elbow' and 'right_wrist'.
+    For the left hand: uses 'left_elbow' and 'left_wrist'.
+    """
+    marker_features = {
+        'right': ['right_elbow', 'right_wrist'],
+        'left': ['left_elbow', 'left_wrist']
+    }
+
+    print('Extracting distal tremor ... ')
+    for patient in tqdm(pc.patients, total=len(pc.patients)):
+        hands = check_hand_(patient)
+        pose_estimation = patient.pose_estimation
+        structural_features = pd.DataFrame(index=pose_estimation.index)
+        
+        for hand in hands:
+            for marker in marker_features[hand]:
+                marker_data = extract_marker_data(pose_estimation, marker)
+                for col_name, series in marker_data.items():
+                    structural_features[col_name] = series
+        patient.structural_features = structural_features
 
     return pc

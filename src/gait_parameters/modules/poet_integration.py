@@ -25,6 +25,32 @@ from my_utils.helpers import get_robust_fps
 logger = logging.getLogger(__name__)
 
 
+def debug_print_shoulder_markers(df: pd.DataFrame, step: str):
+    """
+    Logs the column names and first two rows of any columns containing 'shoulder'
+    from the provided DataFrame.
+    """
+    shoulder_cols = [col for col in df.columns if 'shoulder' in col[0].lower()]
+    if shoulder_cols:
+        logger.info("Step %s: Found shoulder markers: %s", step, shoulder_cols)
+        logger.info("Step %s: Data sample for shoulder markers:\n%s", step, df.loc[:, shoulder_cols].head(2))
+    else:
+        logger.info("Step %s: No shoulder markers found.", step)
+
+
+# --- Monkey Patch Start ---
+# Disable active time period assignment by replacing it with a dummy function.
+try:
+    from .PoET import poet_features
+    def dummy_assign_hand_time_periods(pc):
+        logger.info("Skipping active time period assignment (monkey patched).")
+        return pc
+    poet_features.assign_hand_time_periods = dummy_assign_hand_time_periods
+except Exception as e:
+    logger.error("Failed to monkey patch assign_hand_time_periods: %s", e)
+# --- Monkey Patch End ---
+
+
 def load_tracking_csv(csv_path: str, video_path: str) -> Optional[pd.DataFrame]:
     """
     Attempts to load and validate the tracking CSV file.
@@ -39,6 +65,9 @@ def load_tracking_csv(csv_path: str, video_path: str) -> Optional[pd.DataFrame]:
         if not isinstance(data.columns, pd.MultiIndex):
             logger.error("Tracking CSV for %s is not in the expected MultiIndex format.", video_path)
             return None
+
+        # Debug: print shoulder markers in the tracking CSV.
+        debug_print_shoulder_markers(data, "Tracking CSV")
         return data
     except Exception as e:
         logger.warning("Error reading tracking CSV for %s: %s; will re-run tracking.", video_path, e)
@@ -112,6 +141,12 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
         logger.error("Preprocessing failed for %s", csv_path)
     else:
         logger.info("Preprocessing complete.")
+        # Debug: For each patient, print shoulder markers from the stored pose_estimation (or structural_features if available)
+        for patient in pc.patients:
+            df = patient.pose_estimation
+            if hasattr(patient, "structural_features"):
+                df = patient.structural_features
+            debug_print_shoulder_markers(df, f"Preprocessing for patient {patient.patient_id}")
     return pc
 
 
@@ -126,6 +161,12 @@ def run_kinematics(pc):
         logger.error("Kinematics extraction failed.")
     else:
         logger.info("Kinematic analysis complete.")
+        # Debug: Check for shoulder markers after kinematics.
+        for patient in pc.patients:
+            df = patient.pose_estimation
+            if hasattr(patient, "structural_features"):
+                df = patient.structural_features
+            debug_print_shoulder_markers(df, f"Kinematics for patient {patient.patient_id}")
     return pc
 
 
@@ -138,6 +179,12 @@ def run_postprocessing(pc):
     from .PoET.poet_features import assign_hand_time_periods
     pc = assign_hand_time_periods(pc)
     logger.info("Postprocessing complete.")
+    # Debug: Check for shoulder markers after postprocessing.
+    for patient in pc.patients:
+        df = patient.pose_estimation
+        if hasattr(patient, "structural_features"):
+            df = patient.structural_features
+        debug_print_shoulder_markers(df, f"Postprocessing for patient {patient.patient_id}")
     return pc
 
 
@@ -146,6 +193,8 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
     Extracts tremor features for proximal arm, distal arm, and fingers,
     then combines them into a single output.
     Now imports the feature extraction functions from poet_features.
+    This version is made more robust so that if any extraction fails or returns
+    an empty DataFrame, it is replaced with an empty DataFrame.
     """
     logger.info("### ENTERING FEATURE EXTRACTION")
     from .PoET.poet_features import (
@@ -153,13 +202,53 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         extract_distal_arm_tremor_features,
         extract_fingers_tremor_features
     )
-    proximal_arm_features = extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False)
-    distal_arm_features = extract_distal_arm_tremor_features(pc, plot=False, save_plots=False)
-    fingers_features = extract_fingers_tremor_features(pc, plot=False, save_plots=False)
-
-    tremor_features = pd.concat([proximal_arm_features, distal_arm_features, fingers_features], axis=1)
+    
+    # Extract proximal arm tremor features.
+    try:
+        proximal_arm_features = extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False)
+        if proximal_arm_features is None or proximal_arm_features.empty:
+            logger.warning("Proximal arm tremor features are empty for all patients. Using empty DataFrame.")
+            proximal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
+    except Exception as e:
+        logger.error("Error extracting proximal arm tremor features: %s", e)
+        proximal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
+    
+    # Extract distal arm tremor features.
+    try:
+        distal_arm_features = extract_distal_arm_tremor_features(pc, plot=False, save_plots=False)
+        if distal_arm_features is None or distal_arm_features.empty:
+            logger.warning("Distal arm tremor features are empty for all patients. Using empty DataFrame.")
+            distal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
+    except Exception as e:
+        logger.error("Error extracting distal arm tremor features: %s", e)
+        distal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
+    
+    # Extract fingers tremor features.
+    try:
+        fingers_features = extract_fingers_tremor_features(pc, plot=False, save_plots=False)
+        if fingers_features is None or fingers_features.empty:
+            logger.warning("Fingers tremor features are empty for all patients. Using empty DataFrame.")
+            fingers_features = pd.DataFrame(index=pc.get_patient_ids())
+    except Exception as e:
+        logger.error("Error extracting fingers tremor features: %s", e)
+        fingers_features = pd.DataFrame(index=pc.get_patient_ids())
+    
+    # Combine the features side-by-side.
+    try:
+        combined_features = pd.concat([proximal_arm_features, distal_arm_features, fingers_features], axis=1)
+    except Exception as e:
+        logger.error("Error combining tremor features: %s", e)
+        combined_features = pd.DataFrame(index=pc.get_patient_ids())
+    
+    # Check for duplicate columns and remove duplicates if necessary.
+    if combined_features.columns.duplicated().any():
+        logger.warning("Duplicate columns found in tremor features. Removing duplicates.")
+        combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+    
     logger.info("Feature extraction complete.")
-    return tremor_features
+    # Debug: Print final feature DataFrame columns
+    logger.info("Final tremor features columns: %s", combined_features.columns.tolist())
+    return combined_features
 
 
 def run_poet_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFrame, dict]]:
