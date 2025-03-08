@@ -5,11 +5,11 @@ poet_integration.py
 Created on Mon Mar  3 21:58:39 2025
 Author: Lange_L
 
-This module runs the full PoET pipeline (tracking → preprocessing → kinematics → feature extraction)
+This module runs the full PoET pipeline (tracking → preprocessing → marker extraction → postprocessing → feature extraction)
 on a single video file and returns tremor metrics.
 
 Note: The preprocessing step now preserves the multi-index keypoint format 
-(e.g. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
+(e.g.. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
 This version only supports the MultiIndex CSV format.
 """
 
@@ -141,7 +141,7 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
         logger.error("Preprocessing failed for %s", csv_path)
     else:
         logger.info("Preprocessing complete.")
-        # Debug: For each patient, print shoulder markers from the stored pose_estimation (or structural_features if available)
+        # Debug: For each patient, print shoulder markers from the stored pose_estimation 
         for patient in pc.patients:
             df = patient.pose_estimation
             if hasattr(patient, "structural_features"):
@@ -150,23 +150,30 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
     return pc
 
 
-def run_kinematics(pc):
+def run_marker_extraction(pc):
     """
-    Performs kinematic analysis to extract tremor-related signals.
+    Replaces the old kinematics step by extracting marker data for tremor analysis.
+    Calls functions to extract intention, postural, proximal, distal, and finger tremor marker data,
+    storing the results in dedicated attributes on each patient.
     """
-    logger.info("### ENTERING KINEMATIC ANALYSIS")
-    from .PoET.poet_kinematics import extract_tremor
-    pc = extract_tremor(pc)
-    if pc is None:
-        logger.error("Kinematics extraction failed.")
-    else:
-        logger.info("Kinematic analysis complete.")
-        # Debug: Check for shoulder markers after kinematics.
-        for patient in pc.patients:
-            df = patient.pose_estimation
-            if hasattr(patient, "structural_features"):
-                df = patient.structural_features
-            debug_print_shoulder_markers(df, f"Kinematics for patient {patient.patient_id}")
+    logger.info("### ENTERING MARKER EXTRACTION")
+    from .PoET.poet_kinematics import (
+        extract_intention_tremor,
+        extract_postural_tremor,
+        extract_proximal_tremor,
+        extract_distal_tremor,
+        extract_fingers_tremor  # Added to extract finger markers
+    )
+    pc = extract_intention_tremor(pc)
+    pc = extract_postural_tremor(pc)
+    pc = extract_proximal_tremor(pc)
+    pc = extract_distal_tremor(pc)
+    pc = extract_fingers_tremor(pc)  # Now finger tremor markers are extracted
+    logger.info("Marker extraction complete.")
+    # Debug: Check for shoulder markers in the newly stored proximal tremor features.
+    for patient in pc.patients:
+        if hasattr(patient, "proximal_tremor_features"):
+            debug_print_shoulder_markers(patient.proximal_tremor_features, f"Marker Extraction for patient {patient.patient_id}")
     return pc
 
 
@@ -256,7 +263,7 @@ def run_poet_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFr
     Runs the full PoET pipeline on a single video file and returns tremor metrics.
     This version only supports CSV tracking data with a MultiIndex header.
     
-    Updated to use the same output logic as the main script.
+    Updated to use marker extraction (instead of the removed kinematic step) and the new feature extraction.
     """
     # Use the tracked CSV directory from the main script.
     csv_output_folder = config["pose_estimator"]["tracked_csv_dir"]
@@ -298,11 +305,9 @@ def run_poet_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFr
     if pc is None:
         return None
 
-    # Kinematics.
-    pc = run_kinematics(pc)
-    if pc is None:
-        return None
-
+    # Marker Extraction (replacing kinematics).
+    pc = run_marker_extraction(pc)
+    
     # Postprocessing.
     pc = run_postprocessing(pc)
 

@@ -90,30 +90,47 @@ def get_marker_columns(df: pd.DataFrame, marker_name: str) -> list:
             coords.append(col)
     return coords
 
+#############################################
+# Active Time Period Assignment
+#############################################
 def assign_hand_time_periods(pc):
     """
     Loop over patients and assign active time periods.
-    Normalizes structural features to ensure MultiIndex format and then computes
+    Uses an available tremor features DataFrame from the new dedicated attributes
+    (proximal, distal, or fingers) or falls back to structural_features if available.
+    Normalizes the DataFrame to ensure MultiIndex format and then computes
     active time periods.
     """
     logger.info("Extracting active time periods of hands ...")
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
-        if p.structural_features is not None:
-            p.structural_features = normalize_multiindex_columns(p.structural_features)
-        if DEBUG:
-            if p.structural_features is None or p.structural_features.empty:
-                logger.debug("Structural features for patient %s not found (empty DataFrame).", p.patient_id)
-            else:
+        
+        # Choose an available structural data source from new attributes:
+        structural_data = None
+        if hasattr(p, 'proximal_tremor_features') and p.proximal_tremor_features is not None and not p.proximal_tremor_features.empty:
+            structural_data = p.proximal_tremor_features
+        elif hasattr(p, 'distal_tremor_features') and p.distal_tremor_features is not None and not p.distal_tremor_features.empty:
+            structural_data = p.distal_tremor_features
+        elif hasattr(p, 'fingers_tremor_features') and p.fingers_tremor_features is not None and not p.fingers_tremor_features.empty:
+            structural_data = p.fingers_tremor_features
+        elif hasattr(p, 'structural_features') and p.structural_features is not None and not p.structural_features.empty:
+            structural_data = p.structural_features
+        
+        if structural_data is not None:
+            structural_data = normalize_multiindex_columns(structural_data)
+            if DEBUG:
                 logger.debug("Patient %s structural features loaded. Columns: %s", 
-                             p.patient_id, p.structural_features.columns.tolist())
-                logger.debug("First two rows for patient %s:\n%s", p.patient_id, p.structural_features.head(2))
-        hands = check_hand_(p)
-        if len(hands) > 1:
-            time_periods = identify_active_time_period(p.structural_features, fs)
+                             p.patient_id, structural_data.columns.tolist())
+                logger.debug("First two rows for patient %s:\n%s", p.patient_id, structural_data.head(2))
+            hands = check_hand_(p)
+            if len(hands) > 1:
+                time_periods = identify_active_time_period(structural_data, fs)
+            else:
+                time_periods = None
+            p.hand_time_periods = time_periods
         else:
-            time_periods = None
-        p.hand_time_periods = time_periods
+            logger.debug("Patient %s has no structural features available for time period extraction.", p.patient_id)
+            p.hand_time_periods = None
     return pc
 
 #############################################
@@ -197,25 +214,27 @@ def _extract_tremor_features_for_marker_pair(p, fs, structural_features: pd.Data
     return features
 
 #############################################
-# Feature Extraction Functions
+# Feature Extraction Functions via PCA
 #############################################
 def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG) -> pd.DataFrame:
     """
     Extract proximal arm tremor features (shoulder and elbow markers) using PCA.
     Expects markers: right_shoulder/right_elbow and left_shoulder/left_elbow.
+    Uses patient.proximal_tremor_features.
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     logger.info("Extracting proximal arm tremor features using PCA ...")
     
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
-        structural_features = normalize_multiindex_columns(p.structural_features)
+        if not hasattr(p, 'proximal_tremor_features') or p.proximal_tremor_features is None or p.proximal_tremor_features.empty:
+            logger.debug("Patient %s has no proximal tremor features.", p.patient_id)
+            continue
+        
+        proximal_features = normalize_multiindex_columns(p.proximal_tremor_features)
         if debug:
-            if structural_features is None or structural_features.empty:
-                logger.debug("No structural features for patient %s.", p.patient_id)
-            else:
-                logger.debug("Patient %s structural features loaded. Columns: %s", 
-                             p.patient_id, structural_features.columns.tolist())
+            logger.debug("Patient %s proximal features loaded. Columns: %s", 
+                         p.patient_id, proximal_features.columns.tolist())
         time_periods = p.hand_time_periods if hasattr(p, 'hand_time_periods') else None
         hands = check_hand_(p)
         
@@ -231,7 +250,7 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
                 logger.debug("Patient %s, hand %s: Extracting proximal features using markers %s and %s", 
                              p.patient_id, hand, marker_a, marker_b)
             
-            features = _extract_tremor_features_for_marker_pair(p, fs, structural_features,
+            features = _extract_tremor_features_for_marker_pair(p, fs, proximal_features,
                                                                  marker_a, marker_b, hand,
                                                                  time_periods, debug, plot, save_plots,
                                                                  feature_prefix="proximal_arm")
@@ -240,27 +259,28 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
                     col_name = f"{key}_proximal_arm_{hand}"
                     features_df.loc[p.patient_id, col_name] = value
             else:
-                logger.debug("No proximal arm features returned for patient %s, hand %s using markers %s and %s. Check data quality and marker availability.", 
-                             p.patient_id, hand, marker_a, marker_b)
+                logger.debug("No proximal arm features returned for patient %s, hand %s.", p.patient_id, hand)
     return features_df
 
 def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG) -> pd.DataFrame:
     """
     Extract distal arm tremor features (elbow and wrist markers) using PCA.
     Expects markers: right_elbow/right_wrist and left_elbow/left_wrist.
+    Uses patient.distal_tremor_features.
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     logger.info("Extracting distal arm tremor features using PCA ...")
     
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
-        structural_features = normalize_multiindex_columns(p.structural_features)
+        if not hasattr(p, 'distal_tremor_features') or p.distal_tremor_features is None or p.distal_tremor_features.empty:
+            logger.debug("Patient %s has no distal tremor features.", p.patient_id)
+            continue
+        
+        distal_features = normalize_multiindex_columns(p.distal_tremor_features)
         if debug:
-            if structural_features is None or structural_features.empty:
-                logger.debug("No structural features for patient %s.", p.patient_id)
-            else:
-                logger.debug("Patient %s structural features loaded. Columns: %s", 
-                             p.patient_id, structural_features.columns.tolist())
+            logger.debug("Patient %s distal features loaded. Columns: %s", 
+                         p.patient_id, distal_features.columns.tolist())
         time_periods = p.hand_time_periods if hasattr(p, 'hand_time_periods') else None
         hands = check_hand_(p)
         
@@ -276,7 +296,7 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
                 logger.debug("Patient %s, hand %s: Extracting distal features using markers %s and %s", 
                              p.patient_id, hand, marker_a, marker_b)
             
-            features = _extract_tremor_features_for_marker_pair(p, fs, structural_features,
+            features = _extract_tremor_features_for_marker_pair(p, fs, distal_features,
                                                                  marker_a, marker_b, hand,
                                                                  time_periods, debug, plot, save_plots,
                                                                  feature_prefix="distal_arm")
@@ -285,27 +305,28 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
                     col_name = f"{key}_distal_arm_{hand}"
                     features_df.loc[p.patient_id, col_name] = value
             else:
-                logger.debug("No distal arm features returned for patient %s, hand %s using markers %s and %s. Check data quality and marker availability.", 
-                             p.patient_id, hand, marker_a, marker_b)
+                logger.debug("No distal arm features returned for patient %s, hand %s.", p.patient_id, hand)
     return features_df
 
 def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG) -> pd.DataFrame:
     """
     Extract fingers tremor features via PCA.
-    Expects markers: index_finger_tip_right/middle_finger_tip_right and corresponding left markers.
+    Expects markers: index_finger_tip and middle_finger_tip for each hand.
+    Uses patient.fingers_tremor_features.
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     logger.info("Extracting fingers tremor features using PCA ...")
     
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
-        structural_features = normalize_multiindex_columns(p.structural_features)
+        if not hasattr(p, 'fingers_tremor_features') or p.fingers_tremor_features is None or p.fingers_tremor_features.empty:
+            logger.debug("Patient %s has no fingers tremor features.", p.patient_id)
+            continue
+        
+        fingers_features = normalize_multiindex_columns(p.fingers_tremor_features)
         if debug:
-            if structural_features is None or structural_features.empty:
-                logger.debug("No structural features for patient %s.", p.patient_id)
-            else:
-                logger.debug("Patient %s structural features loaded. Columns: %s", 
-                             p.patient_id, structural_features.columns.tolist())
+            logger.debug("Patient %s fingers features loaded. Columns: %s", 
+                         p.patient_id, fingers_features.columns.tolist())
         time_periods = p.hand_time_periods if hasattr(p, 'hand_time_periods') else None
         hands = check_hand_(p)
         
@@ -317,7 +338,11 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
                 marker_a = "index_finger_tip_left"
                 marker_b = "middle_finger_tip_left"
             
-            features = _extract_tremor_features_for_marker_pair(p, fs, structural_features,
+            if debug:
+                logger.debug("Patient %s, hand %s: Extracting fingers features using markers %s and %s", 
+                             p.patient_id, hand, marker_a, marker_b)
+            
+            features = _extract_tremor_features_for_marker_pair(p, fs, fingers_features,
                                                                  marker_a, marker_b, hand,
                                                                  time_periods, debug, plot, save_plots,
                                                                  feature_prefix="fingers")
@@ -326,6 +351,5 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
                     col_name = f"{key}_fingers_{hand}"
                     features_df.loc[p.patient_id, col_name] = value
             else:
-                logger.debug("No fingers tremor features returned for patient %s, hand %s using markers %s and %s.", 
-                             p.patient_id, hand, marker_a, marker_b)
+                logger.debug("No fingers tremor features returned for patient %s, hand %s.", p.patient_id, hand)
     return features_df
