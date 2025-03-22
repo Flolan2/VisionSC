@@ -188,4 +188,48 @@ def ensure_peak_to_trough(peaks,troughs):
         return np.array(y), np.array(x)
     else:
         return np.array(x), np.array(y)
+    
+def executive_summary(feature_df):
+    """
+    Creates an executive summary from the detailed feature DataFrame.
+    This summary highlights key tremor metrics for proximal, distal, and finger tremors on each side.
+    
+    Parameters:
+        feature_df (pd.DataFrame): DataFrame containing detailed tremor features.
+    
+    Returns:
+        str: A text summary of the key metrics.
+    """
+    summary_lines = []
+    
+    # Define regions and sides of interest.
+    regions = ['proximal_arm', 'distal_arm', 'fingers']
+    sides = ['left', 'right']
+    
+    for region in regions:
+        for side in sides:
+            # Construct expected column names.
+            col_max_amp = f"pca_hilbert_max_amplitude_{region}_{side}"
+            col_mean_amp = f"pca_hilbert_mean_amplitude_{region}_{side}"
+            col_mean_freq = f"pca_spectrogram_mean_frequency_{region}_{side}"
+            
+            if col_max_amp in feature_df.columns and col_mean_amp in feature_df.columns and col_mean_freq in feature_df.columns:
+                # Here we assume the summary is computed as the average value across videos (if more than one)
+                max_amp = feature_df[col_max_amp].mean()
+                mean_amp = feature_df[col_mean_amp].mean()
+                mean_freq = feature_df[col_mean_freq].mean()
+                
+                summary_lines.append(
+                    f"{region.replace('_', ' ').capitalize()} ({side}): "
+                    f"Max Amplitude = {max_amp:.2f}, Mean Amplitude = {mean_amp:.2f}, "
+                    f"Mean Frequency = {mean_freq:.2f} Hz"
+                )
+    
+    # Optionally, include the frame rate
+    if 'frame_rate' in feature_df.columns:
+        fr = feature_df['frame_rate'].iloc[0]
+        summary_lines.append(f"Frame rate: {fr:.2f} FPS")
+    
+    return "\n".join(summary_lines)
+
         

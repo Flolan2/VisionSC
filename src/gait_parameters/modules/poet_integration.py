@@ -9,7 +9,7 @@ This module runs the full PoET pipeline (tracking → preprocessing → marker e
 on a single video file and returns tremor metrics.
 
 Note: The preprocessing step now preserves the multi-index keypoint format 
-(e.g.. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
+(e.g. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
 This version only supports the MultiIndex CSV format.
 """
 
@@ -305,6 +305,16 @@ def run_poet_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFr
     if pc is None:
         return None
 
+    # --- NORMALIZATION STEP ---
+    # Import and apply local normalization before marker extraction.
+    from .PoET.normalization import normalize_pose_data
+    pc = normalize_pose_data(
+        pc,
+        global_scaling_factor=config.get("global_scaling_factor", 1.0),
+        use_local=True,
+        use_zscore=True
+    )
+    
     # Marker Extraction (replacing kinematics).
     pc = run_marker_extraction(pc)
     
@@ -321,4 +331,38 @@ def run_poet_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFr
         tremor_features['frame_rate'] = frame_rate
 
     logger.info("### PIPELINE COMPLETE")
+    
+# --- EXECUTIVE SUMMARY STEP ---
+
+    try:
+        from .PoET.poet_utils import executive_summary  # Adjust the import as needed.
+        summary_text = executive_summary(tremor_features)
+        
+        # Get the output directory from config as a relative path.
+        relative_output_dir = config.get("output_dir", "Output/kinematic_features")
+        
+        # Compute the project root relative to this module.
+        # Adjust the number of ".." based on your directory structure.
+        current_module_dir = os.path.dirname(__file__)
+        project_root = os.path.abspath(os.path.join(current_module_dir, "..", "..", ".."))
+        
+        # Build the absolute output directory.
+        # Assuming your current script is in /Users/Lange_L/Documents/Kinematik/Gait/gait-analysis/src/gait_parameters/modules
+        # and you want to go to /Users/Lange_L/Documents/Kinematik/Gait/Output/kinematic_features
+        
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+        output_dir = os.path.join(base_dir, "Output", "kinematic_features")
+        os.makedirs(output_dir, exist_ok=True)
+        summary_path = os.path.join(output_dir, video_name + "_executive_summary.txt")
+
+        
+        summary_path = os.path.join(output_dir, video_name + "_executive_summary.txt")
+        with open(summary_path, "w") as f:
+            f.write(summary_text)
+        logger.info("Executive summary written to %s", summary_path)
+    except Exception as e:
+        logger.error("Failed to create executive summary: %s", e)
+
+
+    
     return tremor_features
