@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-poet_feature_extraction.py
+potremor_feature_extraction.py
 Created on [Date]
 Author: [Your Name]
 
 This module contains functions for normalizing multi-index DataFrame columns,
 and extracting tremor features from structural data using PCA.
-It leverages functions from the poet_signal_preprocessing module.
+It leverages functions from the signal_preprocessing module.
 """
 
 import os
@@ -19,10 +19,10 @@ import matplotlib.pyplot as plt
 from scipy import signal
 
 # Local utilities assumed to work with multi-index column keys.
-from .poet_utils import identify_active_time_period, check_hand_, meanfilt
+from .tremor_utils import identify_active_time_period, check_hand_, meanfilt
 
 # Import signal processing functions from the separate module.
-from .poet_signal_analysis import butter_bandpass_filter, pca_tremor_analysis
+from .tremor_signal_analysis import butter_bandpass_filter, pca_tremor_analysis
 
 # Global output directory for plots.
 PLOTS_DIR = "./plots"

@@ -1,7 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
 
-from .poet_utils import check_hand_
+from .tremor_utils import check_hand_
 
 def extract_marker_data(pose_estimation, marker_name):
     """

@@ -157,7 +157,7 @@ def process_single_file(input_file, output_dir, config, module):
 
     # Step 2: Branch by module selection
     if module == "gait":
-        # gait analysis
+        # Gait analysis
         pipeline = GaitPipeline(
             input_path=input_file,
             config=config,
@@ -242,26 +242,23 @@ def process_single_file(input_file, output_dir, config, module):
         return summary_df, None
 
     elif module == "postural_tremor":
-        # Run PoET integration for postural tremor analysis.
-        from modules.poet_integration import run_poet_analysis
-        tremor_features = run_poet_analysis(input_file, config)
+        # Run tremor integration for postural tremor analysis.
+        from modules.tremor_integration import run_tremor_analysis
+        tremor_features = run_tremor_analysis(input_file, config)
         if tremor_features is None:
             logger.error("Tremor analysis failed for %s", input_file)
             return None, input_file
 
-        # If tremor_features is a DataFrame, save all columns:
         video_name = os.path.splitext(os.path.basename(input_file))[0]
         if isinstance(tremor_features, pd.DataFrame):
             tremor_features["video_name"] = video_name
             summary_df = tremor_features.reset_index(drop=True)
-            # Ensure video_name column is the first column
             if 'video_name' in summary_df.columns:
                 columns = ['video_name'] + [col for col in summary_df.columns if col != 'video_name']
                 summary_df = summary_df[columns]
             logger.info("Processed %s; postural tremor analysis complete.", input_file)
             return summary_df, None
         else:
-            # If it returns a dictionary or something else, fall back to old approach:
             summary_df = pd.DataFrame({
                 'video_name': [video_name],
                 'dominant_tremor_frequency': [tremor_features.get('dominant_freq', None)],
