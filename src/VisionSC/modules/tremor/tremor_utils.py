@@ -5,6 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def check_hand_(patient: Any) -> List[str]:
     """
     Determines which hand(s) have been tracked for a given patient based on their labels.
@@ -270,21 +271,6 @@ def ensure_peak_to_trough(
     else:
         return np.array(x), np.array(y)
 
-def debug_print_shoulder_markers(df: pd.DataFrame, step: str) -> None:
-    """
-    Logs the column names and first two rows of any columns containing 'shoulder'
-    from the provided DataFrame.
-    
-    Parameters:
-        df (pd.DataFrame): DataFrame containing keypoint data.
-        step (str): A descriptor for the current processing step.
-    """
-    shoulder_cols = [col for col in df.columns if 'shoulder' in str(col[0]).lower()]
-    if shoulder_cols:
-        logger.info("Step %s: Found shoulder markers: %s", step, shoulder_cols)
-        logger.info("Step %s: Data sample for shoulder markers:\n%s", step, df.loc[:, shoulder_cols].head(2))
-    else:
-        logger.info("Step %s: No shoulder markers found.", step)
 
 def load_tracking_csv(csv_path: str, video_path: str) -> Optional[pd.DataFrame]:
     """
@@ -307,7 +293,6 @@ def load_tracking_csv(csv_path: str, video_path: str) -> Optional[pd.DataFrame]:
             logger.error("Tracking CSV for %s is not in the expected MultiIndex format.", video_path)
             return None
 
-        debug_print_shoulder_markers(data, "Tracking CSV")
         return data
     except Exception as e:
         logger.warning("Error reading tracking CSV for %s: %s; will re-run tracking.", video_path, e)

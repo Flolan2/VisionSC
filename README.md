@@ -1,6 +1,6 @@
-# Kinematic Gait Analysis
+# Kinematic Analysis
 
-This project analyzes patient gait data from videos, performs statistical inferences, and uses machine learning for prediction and classification.
+This project analyzes patient data from videos, performs statistical inferences
 
 ## Repo Structure
 - `src/`: Source code containing the core components of the project.
@@ -13,7 +13,7 @@ This project analyzes patient gait data from videos, performs statistical infere
 ## Quickstart
 1. Clone the repository:
    ```bash
-   git clone https://github.com/IfeAdemola/gait-analysis.git
+   git clone https://github.com/Flolan2/VisionSC
 
 2. Install dependencies:
     ```bash

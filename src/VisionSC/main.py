@@ -11,7 +11,7 @@ from modules.gait.my_utils.helpers import save_csv
 from modules.gait_pipeline import process_gait_file
 
 # Configure logging and warnings
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=FutureWarning)
 

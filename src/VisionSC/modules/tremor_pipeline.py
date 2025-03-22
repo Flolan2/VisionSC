@@ -2,15 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 tremor_integration.py
-Created on Mon Mar  3 21:58:39 2025
-Author: Lange_L
-
-This module runs the full tremor pipeline (tracking → preprocessing → marker extraction → postprocessing → feature extraction)
-on a single video file and returns tremor metrics.
-
-Note: The preprocessing step now preserves the multi-index keypoint format 
-(e.g. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
-This version only supports the MultiIndex CSV format.
+Modified version: Excessive logging output removed
 """
 
 import os
@@ -20,10 +12,10 @@ import numpy as np
 import pandas as pd
 
 # Import the robust FPS extraction helper.
-from my_utils.helpers import get_robust_fps
+from modules.helpers import get_robust_fps
 
 # Import the utility functions that have been moved to tremor_utils.
-from .tremor.tremor_utils import debug_print_shoulder_markers, load_tracking_csv
+from .tremor.tremor_utils import load_tracking_csv
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +23,8 @@ logger = logging.getLogger(__name__)
 try:
     from .tremor import tremor_features
     def dummy_assign_hand_time_periods(pc):
-        logger.info("Skipping active time period assignment (monkey patched).")
+        # Minimal logging to indicate monkey patching without verbose output.
+        logger.debug("Skipping active time period assignment (monkey patched).")
         return pc
     tremor_features.assign_hand_time_periods = dummy_assign_hand_time_periods
 except Exception as e:
@@ -40,10 +33,6 @@ except Exception as e:
 
 
 def run_tracking(video_path: str, csv_path: str, config: dict) -> None:
-    """
-    Runs the tracking step if a valid CSV is not already present.
-    Saves the tracking CSV and tracked video to their respective directories defined in config.
-    """
     logger.info("### ENTERING TRACKING")
     from .tremor.tremor_tracking import load_models, track_video
 
@@ -86,9 +75,6 @@ def run_tracking(video_path: str, csv_path: str, config: dict) -> None:
 
 
 def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
-    """
-    Constructs the PatientCollection using the tracking CSV and returns it.
-    """
     logger.info("### STARTING PREPROCESSING")
     from .tremor.tremor_preprocessing import construct_data
     pc = construct_data(
@@ -102,19 +88,11 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
         logger.error("Preprocessing failed for %s", csv_path)
     else:
         logger.info("Preprocessing complete.")
-        for patient in pc.patients:
-            df = patient.pose_estimation
-            if hasattr(patient, "structural_features"):
-                df = patient.structural_features
-            # Use the utility function for debug printing.
-            debug_print_shoulder_markers(df, f"Preprocessing for patient {patient.patient_id}")
+        # Removed debug_print_shoulder_markers to reduce output.
     return pc
 
 
 def run_marker_extraction(pc):
-    """
-    Extracts marker data for tremor analysis.
-    """
     logger.info("### ENTERING MARKER EXTRACTION")
     from .tremor.tremor_marker_extraction import (
         extract_intention_tremor,
@@ -129,33 +107,20 @@ def run_marker_extraction(pc):
     pc = extract_distal_tremor(pc)
     pc = extract_fingers_tremor(pc)
     logger.info("Marker extraction complete.")
-    
-    for patient in pc.patients:
-        if hasattr(patient, "proximal_tremor_features"):
-            debug_print_shoulder_markers(patient.proximal_tremor_features, f"Marker Extraction for patient {patient.patient_id}")
+    # Removed debug printing of marker data.
     return pc
 
 
 def run_postprocessing(pc):
-    """
-    Assigns hand time periods in the processed data.
-    """
     logger.info("### ENTERING POSTPROCESSING")
     from .tremor.tremor_pca_features import assign_hand_time_periods
     pc = assign_hand_time_periods(pc)
     logger.info("Postprocessing complete.")
-    for patient in pc.patients:
-        df = patient.pose_estimation
-        if hasattr(patient, "structural_features"):
-            df = patient.structural_features
-        debug_print_shoulder_markers(df, f"Postprocessing for patient {patient.patient_id}")
+    # Removed detailed postprocessing data printout.
     return pc
 
 
 def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
-    """
-    Extracts tremor features (proximal arm, distal arm, and fingers) and combines them.
-    """
     logger.info("### ENTERING FEATURE EXTRACTION")
     from .tremor.tremor_pca_features import (
         extract_proximal_arm_tremor_features,
@@ -201,14 +166,11 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
     
     logger.info("Feature extraction complete.")
-    logger.info("Final tremor features columns: %s", combined_features.columns.tolist())
+    # Removed logging of the final tremor features columns.
     return combined_features
 
 
 def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFrame, dict]]:
-    """
-    Runs the full tremor pipeline on a single video file and returns tremor metrics.
-    """
     csv_output_folder = config["pose_estimator"]["tracked_csv_dir"]
     video_name = os.path.basename(video_path).split('.')[0]
     csv_path = os.path.join(csv_output_folder, f"{video_name}_MPtracked.csv")
