@@ -5,9 +5,9 @@ from sklearn.decomposition import PCA
 import os
 import json
 
-from my_utils.helpers import detect_extremas
+from modules.gait.my_utils.helpers import detect_extremas
 # Update the plotting import to the new combined function
-from my_utils.plotting import plot_combined_extremas_and_toe, plot_extrema_frames
+from modules.gait.my_utils.plotting import plot_combined_extremas_and_toe, plot_extrema_frames
 
 def get_project_root():
     """

@@ -1,7 +1,0 @@
- Proximal arm (left): Max Amplitude = 4.93, Mean Amplitude = 1.24, Mean Frequency = 5.00 Hz
-Proximal arm (right): Max Amplitude = 5.23, Mean Amplitude = 1.25, Mean Frequency = 5.00 Hz
-Distal arm (left): Max Amplitude = 5.46, Mean Amplitude = 1.23, Mean Frequency = 5.00 Hz
-Distal arm (right): Max Amplitude = 4.88, Mean Amplitude = 1.31, Mean Frequency = 5.00 Hz
-Fingers (left): Max Amplitude = 3.35, Mean Amplitude = 1.04, Mean Frequency = 5.00 Hz
-Fingers (right): Max Amplitude = 13.04, Mean Amplitude = 1.64, Mean Frequency = 5.00 Hz
-Frame rate: 60.00 FPS

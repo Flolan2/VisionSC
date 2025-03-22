@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import logging
 
-from my_utils.gait_parameters import prepare_gait_dataframe
-from my_utils.helpers import save_csv
+from modules.gait.my_utils.gait_parameters import prepare_gait_dataframe
+from modules.gait.my_utils.helpers import save_csv
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)

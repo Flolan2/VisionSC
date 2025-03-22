@@ -19,29 +19,15 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
-# Import the robust FPS extraction helper from your utility module.
+# Import the robust FPS extraction helper.
 from my_utils.helpers import get_robust_fps
+
+# Import the utility functions that have been moved to tremor_utils.
+from .tremor.tremor_utils import debug_print_shoulder_markers, load_tracking_csv
 
 logger = logging.getLogger(__name__)
 
-
-def debug_print_shoulder_markers(df: pd.DataFrame, step: str):
-    """
-    Logs the column names and first two rows of any columns containing 'shoulder'
-    from the provided DataFrame.
-    
-    NOTE: Consider relocating this helper to a shared utilities module if used across multiple files.
-    """
-    shoulder_cols = [col for col in df.columns if 'shoulder' in col[0].lower()]
-    if shoulder_cols:
-        logger.info("Step %s: Found shoulder markers: %s", step, shoulder_cols)
-        logger.info("Step %s: Data sample for shoulder markers:\n%s", step, df.loc[:, shoulder_cols].head(2))
-    else:
-        logger.info("Step %s: No shoulder markers found.", step)
-
-
 # --- Monkey Patch Start ---
-# Disable active time period assignment by replacing it with a dummy function.
 try:
     from .tremor import tremor_features
     def dummy_assign_hand_time_periods(pc):
@@ -51,28 +37,6 @@ try:
 except Exception as e:
     logger.error("Failed to monkey patch assign_hand_time_periods: %s", e)
 # --- Monkey Patch End ---
-
-
-def load_tracking_csv(csv_path: str, video_path: str) -> Optional[pd.DataFrame]:
-    """
-    Attempts to load and validate the tracking CSV file.
-    Returns a valid DataFrame if successful, or None if the CSV is empty, invalid,
-    or not in the expected MultiIndex format.
-    """
-    try:
-        data = pd.read_csv(csv_path, header=[0, 1], index_col=0)
-        if data.empty:
-            logger.info("Tracking CSV exists for %s but is empty; will re-run tracking.", video_path)
-            return None
-        if not isinstance(data.columns, pd.MultiIndex):
-            logger.error("Tracking CSV for %s is not in the expected MultiIndex format.", video_path)
-            return None
-
-        debug_print_shoulder_markers(data, "Tracking CSV")
-        return data
-    except Exception as e:
-        logger.warning("Error reading tracking CSV for %s: %s; will re-run tracking.", video_path, e)
-        return None
 
 
 def run_tracking(video_path: str, csv_path: str, config: dict) -> None:
@@ -142,17 +106,17 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
             df = patient.pose_estimation
             if hasattr(patient, "structural_features"):
                 df = patient.structural_features
+            # Use the utility function for debug printing.
             debug_print_shoulder_markers(df, f"Preprocessing for patient {patient.patient_id}")
     return pc
 
 
 def run_marker_extraction(pc):
     """
-    Replaces the old kinematics step by extracting marker data for tremor analysis.
-    Extracts intention, postural, proximal, distal, and finger tremor marker data.
+    Extracts marker data for tremor analysis.
     """
     logger.info("### ENTERING MARKER EXTRACTION")
-    from .tremor.tremor_kinematics import (
+    from .tremor.tremor_marker_extraction import (
         extract_intention_tremor,
         extract_postural_tremor,
         extract_proximal_tremor,
@@ -174,10 +138,10 @@ def run_marker_extraction(pc):
 
 def run_postprocessing(pc):
     """
-    Assigns hand time periods in the processed data using the tremor features module.
+    Assigns hand time periods in the processed data.
     """
     logger.info("### ENTERING POSTPROCESSING")
-    from .tremor.tremor_features import assign_hand_time_periods
+    from .tremor.tremor_pca_features import assign_hand_time_periods
     pc = assign_hand_time_periods(pc)
     logger.info("Postprocessing complete.")
     for patient in pc.patients:
@@ -191,16 +155,14 @@ def run_postprocessing(pc):
 def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
     """
     Extracts tremor features (proximal arm, distal arm, and fingers) and combines them.
-    Robustly handles extraction failures by substituting empty DataFrames where necessary.
     """
     logger.info("### ENTERING FEATURE EXTRACTION")
-    from .tremor.tremor_features import (
+    from .tremor.tremor_pca_features import (
         extract_proximal_arm_tremor_features,
         extract_distal_arm_tremor_features,
         extract_fingers_tremor_features
     )
     
-    # Extract proximal arm tremor features.
     try:
         proximal_arm_features = extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False)
         if proximal_arm_features is None or proximal_arm_features.empty:
@@ -210,7 +172,6 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         logger.error("Error extracting proximal arm tremor features: %s", e)
         proximal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
     
-    # Extract distal arm tremor features.
     try:
         distal_arm_features = extract_distal_arm_tremor_features(pc, plot=False, save_plots=False)
         if distal_arm_features is None or distal_arm_features.empty:
@@ -220,7 +181,6 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         logger.error("Error extracting distal arm tremor features: %s", e)
         distal_arm_features = pd.DataFrame(index=pc.get_patient_ids())
     
-    # Extract fingers tremor features.
     try:
         fingers_features = extract_fingers_tremor_features(pc, plot=False, save_plots=False)
         if fingers_features is None or fingers_features.empty:
@@ -230,7 +190,6 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         logger.error("Error extracting fingers tremor features: %s", e)
         fingers_features = pd.DataFrame(index=pc.get_patient_ids())
     
-    # Combine features side-by-side.
     try:
         combined_features = pd.concat([proximal_arm_features, distal_arm_features, fingers_features], axis=1)
     except Exception as e:
@@ -249,7 +208,6 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
 def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.DataFrame, dict]]:
     """
     Runs the full tremor pipeline on a single video file and returns tremor metrics.
-    This version supports CSV tracking data with a MultiIndex header.
     """
     csv_output_folder = config["pose_estimator"]["tracked_csv_dir"]
     video_name = os.path.basename(video_path).split('.')[0]
@@ -271,7 +229,6 @@ def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.Data
         logger.error("Failed to load valid tracking data for %s", video_path)
         return None
 
-    # Frame Rate Extraction using the robust FPS helper.
     logger.info("### ENTERING FRAME RATE EXTRACTION")
     try:
         frame_rate = get_robust_fps(video_path, tolerance=0.1)
@@ -281,13 +238,11 @@ def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.Data
         frame_rate = config.get("frame_rate", 30.0)
         logger.info("Using fallback frame rate: %s FPS", frame_rate)
 
-    # Preprocessing.
     pc = run_preprocessing(csv_path, frame_rate, config)
     if pc is None:
         return None
 
-    # --- NORMALIZATION STEP ---
-    from .tremor.normalization import normalize_pose_data
+    from .tremor.tremor_normalization import normalize_pose_data
     pc = normalize_pose_data(
         pc,
         global_scaling_factor=config.get("global_scaling_factor", 1.0),
@@ -295,16 +250,10 @@ def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.Data
         use_zscore=True
     )
     
-    # Marker Extraction.
     pc = run_marker_extraction(pc)
-    
-    # Postprocessing.
     pc = run_postprocessing(pc)
-
-    # Feature extraction.
     tremor_features = run_feature_extraction(pc)
 
-    # Append frame rate info.
     if isinstance(tremor_features, dict):
         tremor_features['frame_rate'] = frame_rate
     elif isinstance(tremor_features, pd.DataFrame):
@@ -312,9 +261,8 @@ def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.Data
 
     logger.info("### PIPELINE COMPLETE")
     
-    # --- EXECUTIVE SUMMARY STEP ---
     try:
-        from .tremor.tremor_utils import executive_summary  # Adjust import as needed.
+        from .tremor.tremor_utils import executive_summary
         summary_text = executive_summary(tremor_features)
         
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))

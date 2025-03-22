@@ -3,7 +3,7 @@ import pandas as pd
 
 from scipy.signal import medfilt
 
-from my_utils.helpers import log, butter_lowpass_filter
+from modules.gait.my_utils.helpers import log, butter_lowpass_filter
 
 class Preprocessor:
     def __init__(self, pose_data):
