@@ -32,7 +32,11 @@ except Exception as e:
 # --- Monkey Patch End ---
 
 
-def run_tracking(video_path: str, csv_path: str, config: dict) -> None:
+def run_tracking(video_path: str, config: dict) -> None:
+    """
+    Run tracking on the provided video and save outputs.
+    Uses separate folders for CSV and video outputs.
+    """
     logger.info("### ENTERING TRACKING")
     from .tremor.tremor_tracking import load_models, track_video
 
@@ -46,32 +50,20 @@ def run_tracking(video_path: str, csv_path: str, config: dict) -> None:
     video_output_folder = config["pose_estimator"]["tracked_video_dir"]
     
     os.makedirs(csv_output_folder, exist_ok=True)
+    os.makedirs(video_output_folder, exist_ok=True)
     
+    # Call track_video with separate output folders.
     track_video(
         video=video_path,
         pose=pose,
         hands=hands,
-        output_folder=csv_output_folder,
+        csv_output_folder=csv_output_folder,
+        video_output_folder=video_output_folder,
         make_csv=True,
         make_video=True,
         plot=True,
         world_coords=True
     )
-    
-    video_name = os.path.basename(video_path).split('.')[0]
-    tracked_video_filename = f"{video_name}_tracked.mp4"
-    source_video_path = os.path.join(csv_output_folder, tracked_video_filename)
-    target_video_path = os.path.join(video_output_folder, tracked_video_filename)
-    
-    if os.path.exists(source_video_path):
-        os.makedirs(video_output_folder, exist_ok=True)
-        try:
-            os.rename(source_video_path, target_video_path)
-            logger.info("Moved tracked video from %s to %s", source_video_path, target_video_path)
-        except Exception as e:
-            logger.error("Failed to move tracked video from %s to %s: %s", source_video_path, target_video_path, e)
-    else:
-        logger.warning("Tracked video file %s not found in %s", tracked_video_filename, csv_output_folder)
 
 
 def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
@@ -88,7 +80,6 @@ def run_preprocessing(csv_path: str, frame_rate: float, config: dict):
         logger.error("Preprocessing failed for %s", csv_path)
     else:
         logger.info("Preprocessing complete.")
-        # Removed debug_print_shoulder_markers to reduce output.
     return pc
 
 
@@ -107,7 +98,6 @@ def run_marker_extraction(pc):
     pc = extract_distal_tremor(pc)
     pc = extract_fingers_tremor(pc)
     logger.info("Marker extraction complete.")
-    # Removed debug printing of marker data.
     return pc
 
 
@@ -116,7 +106,6 @@ def run_postprocessing(pc):
     from .tremor.tremor_pca_features import assign_hand_time_periods
     pc = assign_hand_time_periods(pc)
     logger.info("Postprocessing complete.")
-    # Removed detailed postprocessing data printout.
     return pc
 
 
@@ -166,7 +155,6 @@ def run_feature_extraction(pc) -> Union[pd.DataFrame, dict]:
         combined_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
     
     logger.info("Feature extraction complete.")
-    # Removed logging of the final tremor features columns.
     return combined_features
 
 
@@ -183,7 +171,7 @@ def run_tremor_analysis(video_path: str, config: dict) -> Optional[Union[pd.Data
             logger.info("Existing valid tracking CSV found for %s, skipping tracking.", video_path)
     
     if track_data is None:
-        run_tracking(video_path, csv_path, config)
+        run_tracking(video_path, config)
     
     logger.info("### ENTERING PREPROCESSING")
     track_data = load_tracking_csv(csv_path, video_path)

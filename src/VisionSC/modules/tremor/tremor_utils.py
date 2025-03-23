@@ -358,22 +358,54 @@ def executive_summary(feature_df: pd.DataFrame) -> str:
     for region in regions:
         for side in sides:
             col_max_amp = f"pca_hilbert_max_amplitude_{region}_{side}"
-            col_mean_amp = f"pca_hilbert_mean_amplitude_{region}_{side}"
-            col_mean_freq = f"pca_spectrogram_mean_frequency_{region}_{side}"
+            col_median_amp = f"pca_hilbert_median_amplitude_{region}_{side}"
+            col_amp_variance = f"pca_hilbert_amplitude_variance_{region}_{side}"
             
+            col_median_freq = f"pca_power_spectral_median_frequency_{region}_{side}"
+            col_dom_freq = f"pca_power_spectral_dominant_frequency_{region}_{side}"
+            col_freq_variance = f"pca_power_spectral_frequency_variance_{region}_{side}"
+            
+            # New: instantaneous frequency variability (standard deviation).
+            col_inst_freq_std = f"pca_instantaneous_frequency_std_{region}_{side}"
+            
+            # Check if the essential columns exist.
             if (col_max_amp in feature_df.columns and 
-                col_mean_amp in feature_df.columns and 
-                col_mean_freq in feature_df.columns):
-                max_amp = feature_df[col_max_amp].mean()
-                mean_amp = feature_df[col_mean_amp].mean()
-                mean_freq = feature_df[col_mean_freq].mean()
+                col_median_amp in feature_df.columns and 
+                col_median_freq in feature_df.columns):
                 
-                summary_lines.append(
-                    f"{region.replace('_', ' ').capitalize()} ({side}): "
-                    f"Max Amplitude = {max_amp:.2f}, Mean Amplitude = {mean_amp:.2f}, "
-                    f"Mean Frequency = {mean_freq:.2f} Hz"
-                )
+                # Compute amplitude metrics.
+                max_amp = feature_df[col_max_amp].mean()
+                median_amp = feature_df[col_median_amp].mean()
+                amp_var = (feature_df[col_amp_variance].mean() 
+                           if col_amp_variance in feature_df.columns else None)
+                
+                # Compute frequency metrics.
+                median_freq = feature_df[col_median_freq].mean()
+                dom_freq = (feature_df[col_dom_freq].mean() 
+                            if col_dom_freq in feature_df.columns else None)
+                freq_var = (feature_df[col_freq_variance].mean() 
+                            if col_freq_variance in feature_df.columns else None)
+                
+                # Compute instantaneous frequency variability if available.
+                inst_freq_std = (feature_df[col_inst_freq_std].mean() 
+                                 if col_inst_freq_std in feature_df.columns else None)
+                
+                # Build the summary line.
+                line = f"{region.replace('_', ' ').capitalize()} ({side}): " \
+                       f"Max Amplitude = {max_amp:.2f}, Median Amplitude = {median_amp:.2f}"
+                if amp_var is not None:
+                    line += f", Amplitude Variance = {amp_var:.2f}"
+                
+                line += f", Median Frequency = {median_freq:.2f} Hz"
+                if dom_freq is not None:
+                    line += f", Dominant Frequency = {dom_freq:.2f} Hz"
+                    
+                if inst_freq_std is not None:
+                    line += f", Inst. Freq. Std = {inst_freq_std:.2f} Hz"
+                
+                summary_lines.append(line)
     
+    # Optionally include the frame rate if available.
     if 'frame_rate' in feature_df.columns:
         fr = feature_df['frame_rate'].iloc[0]
         summary_lines.append(f"Frame rate: {fr:.2f} FPS")

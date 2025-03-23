@@ -53,7 +53,8 @@ def load_models(min_hand_detection_confidence=0.5,
     
 
 def track_video_list(video_list, 
-                     output_folder='./tracking/',
+                     csv_output_folder='./tracking/',
+                     video_output_folder='./tracking/',
                      overwrite=False, 
                      verbose=True, 
                      make_csv=True, 
@@ -65,8 +66,10 @@ def track_video_list(video_list,
     Processes a list of videos and performs tracking on each,
     saving outputs only in the MultiIndex format.
     """
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    if not os.path.exists(csv_output_folder):
+        os.makedirs(csv_output_folder)
+    if not os.path.exists(video_output_folder):
+        os.makedirs(video_output_folder)
     
     for i, video in enumerate(video_list):
         # Reload models on each iteration (to reset timestamps)
@@ -80,7 +83,7 @@ def track_video_list(video_list,
         if verbose:
             print(video)
         
-        csv_path = os.path.join(output_folder, f"{video_name}_MPtracked.csv")
+        csv_path = os.path.join(csv_output_folder, f"{video_name}_MPtracked.csv")
         if not overwrite and os.path.isfile(csv_path):
             if verbose:
                 print('CSV file already exists - skipping this video.')
@@ -90,7 +93,8 @@ def track_video_list(video_list,
             video,
             pose,
             hands,
-            output_folder=output_folder,
+            csv_output_folder=csv_output_folder,
+            video_output_folder=video_output_folder,
             make_csv=make_csv,
             make_video=make_video,
             world_coords=world_coords
@@ -100,7 +104,8 @@ def track_video_list(video_list,
 
 
 def track_video(video, pose, hands,
-                output_folder='./',
+                csv_output_folder='./',
+                video_output_folder=None,
                 make_csv=True,
                 make_video=False,
                 plot=False,
@@ -112,6 +117,9 @@ def track_video(video, pose, hands,
     print(video)
     video_name = os.path.basename(video).split('.')[0]
     
+    # Use the provided video_output_folder; if None, default to csv_output_folder
+    video_output_folder = video_output_folder if video_output_folder is not None else csv_output_folder
+
     # Read video frames using skvideo.io.vreader
     videogen = list(skvideo.io.vreader(video))
     if not videogen:
@@ -138,7 +146,7 @@ def track_video(video, pose, hands,
             except Exception:
                 fps = 30
     
-    writer_path = os.path.join(output_folder, f"{video_name}_MPtracked.mp4")
+    writer_path = os.path.join(video_output_folder, f"{video_name}_MPtracked.mp4")
     
     # Initialize cv2.VideoWriter to save the annotated video
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -205,10 +213,12 @@ def track_video(video, pose, hands,
             plt.imshow(annotated_image)
         
         if make_video:
-            writer.write(annotated_image)
+            # Convert the annotated image from RGB to BGR for correct color display in the output video.
+            bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
+            writer.write(bgr_image)
     
     if make_csv:
-        csv_path = os.path.join(output_folder, f"{video_name}_MPtracked.csv")
+        csv_path = os.path.join(csv_output_folder, f"{video_name}_MPtracked.csv")
         # Ensure the DataFrame has a MultiIndex before saving
         if not isinstance(marker_df.columns, pd.MultiIndex):
             raise ValueError("The marker dataframe does not have a MultiIndex. This script only supports MultiIndex data.")
