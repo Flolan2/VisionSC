@@ -79,7 +79,7 @@ class YOLOCropper:
         # fps = cap.get(cv2.CAP_PROP_FPS)
         
         # Option 2: Use robust FPS extraction from helpers:
-        from my_utils.helpers import get_robust_fps
+        from .gait.my_utils.helpers import get_robust_fps
         fps = get_robust_fps(input_video_path)
         
         orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))

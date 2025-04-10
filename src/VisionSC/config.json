@@ -26,5 +26,5 @@
     "step_size_sec": 0.5
   },
   "visualize": false,
-  "analysis_module": "tremor"
+  "analysis_module": "gait"
 }
