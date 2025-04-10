@@ -10,6 +10,32 @@
     "tracked_csv_dir": "tracked_csv",
     "tracked_video_dir": "tracked_videos"
   },
+  "gait_plotting": {
+    "generate_kinematic_plots": true,
+    "plot_timeseries": true,
+    "plot_distributions": true,
+    "plot_left_right_comparison": true,
+    "plot_fog_visualization": true,
+    "timeseries_params": [
+      "stride_duration",
+      "step_length",
+      "gait_speed",
+      "swing",
+      "cadence"
+    ],
+    "distribution_params": [
+      "stride_duration",
+      "step_length",
+      "step_duration",
+      "swing"
+    ],
+    "left_right_params": [
+      "step_duration",
+      "step_length",
+      "swing",
+      "stance"
+    ]
+  },
   "event_detection": {
     "algorithm": "zeni",
     "make_plot": true,
