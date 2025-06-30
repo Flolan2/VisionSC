@@ -1,8 +1,29 @@
-# src/yolo_cropper.py
+# src/modules/yolo_cropper.py
+
+# --- Start of Path Fix ---
+# This block is to ensure that the script can find the 'my_utils' module
+# when run directly from an IDE (like Spyder), especially in a nested directory structure.
+import sys
+import os
+import pathlib
+
+try:
+    # Resolve the path to the 'src' directory and add it to sys.path
+    # This file ('yolo_cropper.py') is in 'src/modules/', so we go up two levels.
+    src_path = pathlib.Path(__file__).resolve().parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+except NameError:
+    # Fallback for environments where __file__ is not defined (e.g., some interactive consoles)
+    # This assumes the current working directory is the project root.
+    src_path = pathlib.Path.cwd() / 'src'
+    if src_path.exists() and str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+# --- End of Path Fix ---
+
 
 import cv2
 import torch
-import os
 import numpy as np
 import logging
 from my_utils.helpers import get_robust_fps
@@ -162,7 +183,9 @@ class YOLOCropper:
                 
                 # Store the final crop box for this frame
                 frame_boxes.append((crop_x1, crop_y1, crop_x2, crop_y2))
-                self.last_selected_box = current_box
+                # --- FIX ---
+                # Anchor the next frame's tracking to the STABLE smoothed box, not the jittery raw one.
+                self.last_selected_box = self.smoothed_box
             else:
                 # If no person is ever found, we add a None to keep frame count sync
                 frame_boxes.append(None)
