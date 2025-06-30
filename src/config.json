@@ -1,0 +1,75 @@
+{
+  "data_dir": "data",
+  "output_dir": "output",
+  "gait_parameters": {
+    "save_path": "gait_parameters"
+  },
+  "pose_estimator": {
+    "make_video": true,
+    "make_csv": true,
+    "tracked_csv_dir": "tracked_data/csv",
+    "tracked_video_dir": "tracked_data/video",
+    "output_fps": null
+  },
+  "gait_plotting": {
+    "generate_kinematic_plots": true,
+    "plot_event_signals": true,
+    "plot_timeseries": true,
+    "plot_distributions": true,
+    "plot_left_right_comparison": true,
+    "plot_fog_visualization": true,
+    "timeseries_params": [
+      "stride_duration",
+      "step_length",
+      "gait_speed",
+      "swing",
+      "cadence"
+    ],
+    "distribution_params": [
+      "stride_duration",
+      "step_length",
+      "step_duration",
+      "swing"
+    ],
+    "left_right_params": [
+      "step_duration",
+      "step_length",
+      "swing",
+      "stance",
+      "initial_double_support",
+      "terminal_double_support"
+    ]
+  },
+  "event_detection": {
+    "algorithm": "zeni",
+    "rotation_marker": "sacrum",
+    "rotation_window_size": 100,
+    "rotation_step_size": 50,
+    "filter": {
+        "apply": true,
+        "cutoff": 3.0,
+        "order": 4
+    },
+    "extrema_detection": {
+        "prominence": 0.15,
+        "min_frames_between_events": 7
+    }
+  },
+  "preprocessing": {
+    "median_filter_window": 11,
+    "normalization": true
+  },
+  "freezing": {
+    "velocity_threshold": 0.05,
+    "fi_threshold": 2.0,
+    "window_size_sec": 2.0,
+    "step_size_sec": 0.5
+  },
+  "yolo_cropper": {
+      "confidence_threshold": 0.5,
+      "margin": 120
+  },
+
+  "visualize": false,
+  "analysis_module": "gait"
+}

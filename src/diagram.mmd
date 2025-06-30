@@ -1,0 +1,32 @@
+
+graph TD;
+    A{What is the primary clinical issue?};
+    A -- Suboptimal Therapeutic Benefit --> B_Path;
+    A -- Stimulation-Induced Side Effects --> C_Path;
+    A -- Sudden Loss of Benefit --> D_Path;
+
+    subgraph B_Path
+        direction TD
+        B1{"Is lead placement\nconfirmed optimal?"};
+        B1 -- NO --> B2["Review Post-Op Imaging"];
+        B1 -- YES --> B3["Manage Expectations\n& Allow Time"];
+        B3 --> B4["Systematic Reprogramming\n(Refer to Figure 2)"];
+    end
+
+    subgraph C_Path
+        direction TD
+        C1["1. Reduce Amplitude"];
+        C2["2. Change Active Contact"];
+        C3["3. Narrow Pulse Width"];
+        C4["4. Use Bipolar/Directional Steering"];
+        C1 --> C2 --> C3 --> C4;
+    end
+
+    subgraph D_Path
+        direction TD
+        D1["1. Check Battery & Device Status"];
+        D2["2. Perform Impedance Check"];
+        D3["3. Interpret Results\n(High = Fracture, Low = Short)"];
+        D4["4. Consider System X-ray"];
+        D1 --> D2 --> D3 --> D4;
+    end
