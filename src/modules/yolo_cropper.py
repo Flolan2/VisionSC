@@ -6,6 +6,7 @@
 import sys
 import os
 import pathlib
+import shutil
 
 try:
     # Resolve the path to the 'src' directory and add it to sys.path
@@ -102,8 +103,8 @@ class YOLOCropper:
 
     def crop_video(self, input_video_path, output_video_path, margin=80, max_fail_frames=20, smoothing_factor=0.9):
         """
-        Crops a video to a tracked person using a two-pass method to ensure
-        constant output dimensions without warping the video content.
+        Crops a video ONLY IF multiple people are detected. Otherwise, creates a
+        link/copy with the correct name.
         """
         cap = cv2.VideoCapture(input_video_path)
         if not cap.isOpened():
@@ -114,14 +115,15 @@ class YOLOCropper:
         orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = get_robust_fps(input_video_path)
 
-        # --- PASS 1: Analyze video to find max crop dimensions and track boxes ---
-        logger.info("Starting Pass 1: Analyzing video to determine optimal crop dimensions...")
+        # --- PASS 1: Analyze video to determine if cropping is necessary ---
+        logger.info("Starting Pass 1: Analyzing video to determine number of people...")
         frame_boxes = []
         max_crop_width = 0
         max_crop_height = 0
         consecutive_fail_count = 0
+        multiple_people_found = False # Flag to track if we need to crop
         
-        self.last_selected_box = None # Reset tracker for each video
+        self.last_selected_box = None
         self.smoothed_box = None
 
         while True:
@@ -131,103 +133,108 @@ class YOLOCropper:
             boxes = self.detect_persons(frame)
             current_box = None
 
+            if len(boxes) > 1:
+                multiple_people_found = True
+
             if not boxes:
                 if self.last_selected_box:
-                    current_box = self.last_selected_box # Use last known box if detection fails
+                    current_box = self.last_selected_box
                     consecutive_fail_count += 1
-                else: # No detections yet and no history
+                else:
                     consecutive_fail_count += 1
             elif len(boxes) == 1:
                 current_box = boxes[0]
                 consecutive_fail_count = 0
             else: # Multiple people detected
                 if self.last_selected_box:
-                    # Find the box with the highest IoU to the last known box
                     ious = [compute_iou(self.last_selected_box, b) for b in boxes]
                     best_idx = np.argmax(ious)
                     if ious[best_idx] > 0.3:
                         current_box = boxes[best_idx]
                         self.selected_person_index = best_idx
-                    else: # Lost track, re-prompt user
+                    else:
                         self.selected_person_index = self.prompt_user_for_selection(frame, boxes)
                         current_box = boxes[self.selected_person_index]
-                else: # First time seeing multiple people
+                else:
                     self.selected_person_index = self.prompt_user_for_selection(frame, boxes)
                     current_box = boxes[self.selected_person_index]
                 consecutive_fail_count = 0
             
             if consecutive_fail_count >= max_fail_frames:
-                logger.warning(f"Person not detected for {max_fail_frames} frames. Ending analysis pass here.")
+                logger.warning(f"Person not detected for {max_fail_frames} frames. Ending analysis pass.")
                 break
 
-            # If a person is being tracked, calculate the smoothed box and update max dimensions
             if current_box:
                 if self.smoothed_box is None: self.smoothed_box = current_box
                 
-                # Apply smoothing
                 self.smoothed_box = tuple(
                     int(smoothing_factor * prev + (1 - smoothing_factor) * curr)
                     for prev, curr in zip(self.smoothed_box, current_box)
                 )
                 
                 x1, y1, x2, y2 = self.smoothed_box
-                # Apply margin and clamp to original frame dimensions
                 crop_x1 = max(x1 - margin, 0)
                 crop_y1 = max(y1 - margin, 0)
                 crop_x2 = min(x2 + margin, orig_width)
                 crop_y2 = min(y2 + margin, orig_height)
                 
-                # Update max width and height
                 max_crop_width = max(max_crop_width, crop_x2 - crop_x1)
                 max_crop_height = max(max_crop_height, crop_y2 - crop_y1)
                 
-                # Store the final crop box for this frame
                 frame_boxes.append((crop_x1, crop_y1, crop_x2, crop_y2))
-                # --- FIX ---
-                # Anchor the next frame's tracking to the STABLE smoothed box, not the jittery raw one.
                 self.last_selected_box = self.smoothed_box
             else:
-                # If no person is ever found, we add a None to keep frame count sync
                 frame_boxes.append(None)
 
+        # --- DECISION POINT: CROP OR COPY ---
+        if not multiple_people_found:
+            logger.info("Only one person detected throughout the video. Creating a direct link/copy instead of cropping.")
+            cap.release()
+            
+            if os.path.lexists(output_video_path): # Use lexists for symlinks
+                os.remove(output_video_path)
+            
+            try:
+                # Create a symbolic link for efficiency
+                os.symlink(os.path.abspath(input_video_path), output_video_path)
+                logger.info(f"SUCCESS: Symbolic link created at: {output_video_path}")
+            except (OSError, AttributeError):
+                logger.warning("Symbolic link failed (check permissions/OS support). Falling back to a full file copy.")
+                shutil.copy2(input_video_path, output_video_path)
+                logger.info(f"SUCCESS: Full copy created at: {output_video_path}")
+                
+            return output_video_path, (orig_width, orig_height)
+
+        # --- PROCEED WITH CROPPING IF MULTIPLE PEOPLE WERE FOUND ---
+        logger.info("Multiple people were detected. Proceeding with video cropping.")
         if max_crop_width == 0 or max_crop_height == 0:
-            logger.error("No person was detected in the video. Cannot create a cropped video.")
+            logger.error("Multiple people were detected, but none could be consistently tracked. Cannot create a cropped video.")
             cap.release()
             return None, None
 
         # --- PASS 2: Create the new video with padding ---
-        logger.info(f"Pass 1 complete. Final crop dimensions will be {max_crop_width}x{max_crop_height}.")
-        logger.info("Starting Pass 2: Writing new video with padding...")
+        logger.info(f"Final crop dimensions will be {max_crop_width}x{max_crop_height}.")
+        logger.info("Starting Pass 2: Writing new cropped video...")
         
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # Rewind video to the beginning
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # Rewind video
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (max_crop_width, max_crop_height))
 
         for frame_idx, crop_box in enumerate(frame_boxes):
             ret, frame = cap.read()
             if not ret: break
-            
-            if crop_box is None: continue # Skip frames where no one was detected
+            if crop_box is None: continue
 
-            # Create a black canvas of the final output size
             canvas = np.zeros((max_crop_height, max_crop_width, 3), dtype=np.uint8)
-
-            # Crop the person from the original frame
             x1, y1, x2, y2 = crop_box
             cropped_person = frame[y1:y2, x1:x2]
-            
             crop_h, crop_w, _ = cropped_person.shape
-            
-            # Calculate top-left corner to paste the crop onto the canvas (centering it)
             paste_x = (max_crop_width - crop_w) // 2
             paste_y = (max_crop_height - crop_h) // 2
-            
-            # Paste the cropped region onto the canvas
             canvas[paste_y : paste_y + crop_h, paste_x : paste_x + crop_w] = cropped_person
-            
             out_writer.write(canvas)
 
         cap.release()
         out_writer.release()
-        logger.info(f"SUCCESS: Cropped video without warping saved to: {output_video_path}")
+        logger.info(f"SUCCESS: Cropped video saved to: {output_video_path}")
         return output_video_path, (max_crop_width, max_crop_height)
