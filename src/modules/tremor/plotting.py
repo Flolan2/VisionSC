@@ -8,7 +8,60 @@ import matplotlib.pyplot as plt
 
 L = logging.getLogger(__name__)
 
+# MODIFIED: Add a new function for the sweep overview plot
+def plot_sweep_overview(sweep_df: pd.DataFrame, patient_id: str, output_dir: str):
+    """
+    Creates a plot summarizing the effect of likelihood_cutoff on key tremor features.
+    """
+    try:
+        fig, axes = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
+        fig.suptitle(f'Likelihood Cutoff Sweep Analysis for: {patient_id}', fontsize=16)
+        
+        # --- 1. Amplitude Plot ---
+        ax1 = axes[0]
+        for side in ['left', 'right']:
+            ax1.plot(sweep_df.index, sweep_df[f'proximal_amp_{side}'], marker='o', linestyle='-', label=f'Proximal Amp ({side.capitalize()})')
+            ax1.plot(sweep_df.index, sweep_df[f'distal_amp_{side}'], marker='x', linestyle='--', label=f'Distal Amp ({side.capitalize()})')
+        ax1.set_ylabel('Median Amplitude (PCA)')
+        ax1.set_title('Tremor Amplitude vs. Likelihood Cutoff')
+        ax1.legend()
+        ax1.grid(True, linestyle='--', alpha=0.7)
+
+        # --- 2. Frequency Plot ---
+        ax2 = axes[1]
+        for side in ['left', 'right']:
+            ax2.plot(sweep_df.index, sweep_df[f'proximal_freq_{side}'], marker='o', linestyle='-', label=f'Proximal Freq ({side.capitalize()})')
+            ax2.plot(sweep_df.index, sweep_df[f'distal_freq_{side}'], marker='x', linestyle='--', label=f'Distal Freq ({side.capitalize()})')
+        ax2.set_ylabel('Dominant Frequency (Hz)')
+        ax2.set_title('Tremor Frequency vs. Likelihood Cutoff')
+        ax2.legend()
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        ax2.set_ylim(2, 10) # Typical tremor range
+
+        # --- 3. Data Retention Plot ---
+        ax3 = axes[2]
+        ax3.plot(sweep_df.index, sweep_df['data_retention_percent'], marker='s', color='green', label='Data Retention')
+        ax3.set_ylabel('Data Points Retained (%)')
+        ax3.set_xlabel('Likelihood Cutoff Threshold')
+        ax3.set_title('Data Retention vs. Likelihood Cutoff')
+        ax3.legend()
+        ax3.grid(True, linestyle='--', alpha=0.7)
+        ax3.set_ylim(0, 105)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        
+        # Save the combined plot
+        plot_path = os.path.join(output_dir, f'sweep_overview_{patient_id}.png')
+        plt.savefig(plot_path)
+        plt.close(fig)
+        L.info(f"Saved sweep overview plot to {plot_path}")
+
+    except Exception as e:
+        L.error(f"Could not generate sweep overview plot for {patient_id}: {e}", exc_info=True)
+
+
 def plot_summary_bars(features_df: pd.DataFrame, patient_id: str, output_dir: str):
+    # ... (no changes in this function) ...
     """
     Creates a grouped bar chart summarizing tremor amplitude and frequency
     for proximal and distal segments, left vs. right.
@@ -73,8 +126,8 @@ def plot_summary_bars(features_df: pd.DataFrame, patient_id: str, output_dir: st
     except Exception as e:
         L.error(f"Could not generate summary bar chart for {patient_id}: {e}")
 
-
 def plot_radar_summary(features_df: pd.DataFrame, patient_id: str, output_dir: str):
+    # ... (no changes in this function) ...
     """
     Creates a radar chart comparing key tremor features between left and right sides.
     """
@@ -128,11 +181,4 @@ def plot_radar_summary(features_df: pd.DataFrame, patient_id: str, output_dir: s
         L.info(f"Saved summary radar chart to {plot_path}")
 
     except Exception as e:
-        L.error(f"Could not generate summary radar chart for {patient_id}: {e}")#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Jun 21 22:54:28 2025
-
-@author: Lange_L
-"""
-
+        L.error(f"Could not generate summary radar chart for {patient_id}: {e}")

@@ -17,13 +17,28 @@ def _extract_tremor_features_for_segment(
     plots_dir: str, feature_prefix: str
 ) -> dict:
     """Helper to extract tremor features for a given data segment."""
-    processed_data = segment_data.interpolate().dropna()
 
-    if processed_data.empty or processed_data.shape[0] < 2:
+    # --- START OF MODIFIED LOGIC ---
+    # The incoming 'segment_data' has NaNs and is already normalized.
+    # We interpolate here, just before analysis. This is the correct place.
+    # The .dropna() was too aggressive and is removed.
+    if segment_data.empty:
+        processed_data = pd.DataFrame()
+    else:
+        processed_data = segment_data.interpolate(method='linear', limit_direction='both')
+    # --- END OF MODIFIED LOGIC ---
+
+    if processed_data.empty or processed_data.isnull().any().any() or processed_data.shape[0] < 2:
         logger.warning(
-            f"Not enough valid data for {p.patient_id} - {hand} {feature_prefix} after cleaning. Skipping feature extraction."
+            f"Not enough valid data for {p.patient_id} - {hand} {feature_prefix} after cleaning. Returning NaNs for features."
         )
-        return None
+        feature_keys = [
+            'pca_hilbert_max_amplitude', 'pca_hilbert_median_amplitude',
+            'pca_hilbert_amplitude_variance', 'pca_instantaneous_frequency_std',
+            'pca_power_spectral_dominant_frequency', 'pca_power_spectral_median_frequency',
+            'pca_power_spectral_frequency_variance', 'pca_power_spectral_max_amplitude'
+        ]
+        return {key: np.nan for key in feature_keys}
 
     data_detrended = signal.detrend(processed_data.values)
     
@@ -31,11 +46,10 @@ def _extract_tremor_features_for_segment(
     for i in range(data_detrended.shape[1]):
         filtered[:, i] = butter_bandpass_filter(data_detrended[:, i], 3, 12, p.sampling_frequency, order=5)
     
-    # MODIFIED: Unpack the new spectrum data (f, P)
     features, projection, (f, P) = pca_tremor_analysis(filtered, p.sampling_frequency)
     
     if plot and projection is not None:
-        # --- PLOT 1: PCA Projection (existing plot) ---
+        # --- PLOT 1: PCA Projection ---
         plt.figure(figsize=(10, 4))
         plt.plot(projection)
         plt.title(f"PCA Projection: {p.patient_id} - {hand} {feature_prefix}")
@@ -46,7 +60,7 @@ def _extract_tremor_features_for_segment(
             plt.savefig(plot_path)
         plt.close()
         
-        # --- PLOT 2: Power Spectrum (new plot) ---
+        # --- PLOT 2: Power Spectrum ---
         plt.figure(figsize=(10, 4))
         plt.plot(f, P, color='b')
         dominant_freq = features['pca_power_spectral_dominant_frequency']
@@ -54,7 +68,7 @@ def _extract_tremor_features_for_segment(
         plt.title(f"Power Spectrum: {p.patient_id} - {hand} {feature_prefix}")
         plt.xlabel("Frequency (Hz)")
         plt.ylabel("Power")
-        plt.xlim(0, 15) # Focus on the relevant tremor frequency range
+        plt.xlim(0, 15)
         plt.grid(True, linestyle='--', alpha=0.6)
         plt.legend()
         if save_plots:
@@ -72,19 +86,25 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, plots
         if not hasattr(p, 'proximal_tremor_features') or p.proximal_tremor_features.empty:
             continue
         
-        hands = check_hand_(p)
-        for hand in hands:
-            markers = [f'{hand}_shoulder', f'{hand}_elbow']
-            cols = [col for m in markers for col in get_marker_columns(p.pose_estimation, m)]
-            
-            if len(cols) >= 2:
-                segment_data = p.pose_estimation[cols]
-                features = _extract_tremor_features_for_segment(
-                    p, segment_data, hand, plot, save_plots, plots_dir, "proximal_arm"
-                )
-                if features:
-                    for key, value in features.items():
-                        features_df.loc[p.patient_id, f"{key}_proximal_arm_{hand}"] = value
+        segment_data = p.proximal_tremor_features
+        left_cols = [c for c in segment_data.columns if 'left' in c[0]]
+        right_cols = [c for c in segment_data.columns if 'right' in c[0]]
+
+        if left_cols:
+            features = _extract_tremor_features_for_segment(
+                p, segment_data[left_cols], 'left', plot, save_plots, plots_dir, "proximal_arm"
+            )
+            if features:
+                for key, value in features.items():
+                    features_df.loc[p.patient_id, f"{key}_proximal_arm_left"] = value
+        
+        if right_cols:
+            features = _extract_tremor_features_for_segment(
+                p, segment_data[right_cols], 'right', plot, save_plots, plots_dir, "proximal_arm"
+            )
+            if features:
+                for key, value in features.items():
+                    features_df.loc[p.patient_id, f"{key}_proximal_arm_right"] = value
     return features_df
 
 def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, plots_dir=".") -> pd.DataFrame:
@@ -94,19 +114,25 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, plots_d
         if not hasattr(p, 'distal_tremor_features') or p.distal_tremor_features.empty:
             continue
 
-        hands = check_hand_(p)
-        for hand in hands:
-            markers = [f'{hand}_elbow', f'{hand}_wrist']
-            cols = [col for m in markers for col in get_marker_columns(p.pose_estimation, m)]
-            
-            if len(cols) >= 2:
-                segment_data = p.pose_estimation[cols]
-                features = _extract_tremor_features_for_segment(
-                    p, segment_data, hand, plot, save_plots, plots_dir, "distal_arm"
-                )
-                if features:
-                    for key, value in features.items():
-                        features_df.loc[p.patient_id, f"{key}_distal_arm_{hand}"] = value
+        segment_data = p.distal_tremor_features
+        left_cols = [c for c in segment_data.columns if 'left' in c[0]]
+        right_cols = [c for c in segment_data.columns if 'right' in c[0]]
+
+        if left_cols:
+            features = _extract_tremor_features_for_segment(
+                p, segment_data[left_cols], 'left', plot, save_plots, plots_dir, "distal_arm"
+            )
+            if features:
+                for key, value in features.items():
+                    features_df.loc[p.patient_id, f"{key}_distal_arm_left"] = value
+        
+        if right_cols:
+            features = _extract_tremor_features_for_segment(
+                p, segment_data[right_cols], 'right', plot, save_plots, plots_dir, "distal_arm"
+            )
+            if features:
+                for key, value in features.items():
+                    features_df.loc[p.patient_id, f"{key}_distal_arm_right"] = value
     return features_df
 
 def extract_fingers_tremor_features(pc, plot=False, save_plots=False, plots_dir=".") -> pd.DataFrame:

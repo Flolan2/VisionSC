@@ -76,6 +76,8 @@ class Patient:
         self.interpolate_pose = interpolate_pose
         self.smooth = smooth
         self.window_length = smoothing_window_length
+        
+        self.cleaning_summary = {}
 
         if self.pose_estimation is not None:
             self._update_markers()
@@ -103,28 +105,44 @@ class Patient:
         if 'time' not in self.pose_estimation.columns:
             self.pose_estimation['time'] = np.asarray(self.pose_estimation.index * (1 / self.sampling_frequency))
 
-    def clean_data(self):
-        """Cleaning and filtering data based on initialization parameters."""
-        if 'likelihood' in self.pose_estimation.columns.get_level_values(1):
-            self.pose_estimation = remove_low_likelihood(self.pose_estimation, self.markers, self.likelihood_cutoff)
+    def clean_data(self, apply_filters=True, apply_smoothing=True):
+        """
+        Cleaning and filtering data based on initialization parameters.
+        Filtering and smoothing can be disabled for specific analyses.
+        """
+        L.info(f"--- Starting data cleaning for {self.patient_id} with cutoff {self.likelihood_cutoff:.2f} ---")
+        
+        self.pose_estimation, retention_percent = remove_low_confidence_data(
+            self.pose_estimation, self.markers, self.likelihood_cutoff
+        )
+        self.cleaning_summary['data_retention_percent'] = retention_percent
 
         if self.interpolate_pose:
+            L.debug("Interpolating missing data points.")
             self.pose_estimation = self.pose_estimation.interpolate(limit_direction='both', method='linear')
 
-        if self.spike_threshold > 0:
-            self.pose_estimation = remove_spikes(self.pose_estimation, self.markers, threshold=self.spike_threshold)
+        # MODIFIED: Make filtering and smoothing optional
+        if apply_filters:
+            if self.spike_threshold > 0:
+                L.debug(f"Removing spikes with threshold > {self.spike_threshold}.")
+                self.pose_estimation = remove_spikes(self.pose_estimation, self.markers, threshold=self.spike_threshold)
 
-        if self.low_cut > 0:
-            self.pose_estimation = filter_low_frequency(self.pose_estimation, self.markers, self.sampling_frequency, self.low_cut)
+            if self.low_cut > 0:
+                L.debug(f"Applying high-pass filter with low_cut at {self.low_cut} Hz.")
+                self.pose_estimation = filter_low_frequency(self.pose_estimation, self.markers, self.sampling_frequency, self.low_cut)
 
-        if self.high_cut is not None:
-            self.pose_estimation = filter_high_frequency(self.pose_estimation, self.markers, self.sampling_frequency, self.high_cut)
+            if self.high_cut is not None:
+                L.debug(f"Applying low-pass filter with high_cut at {self.high_cut} Hz.")
+                self.pose_estimation = filter_high_frequency(self.pose_estimation, self.markers, self.sampling_frequency, self.high_cut)
 
-        if self.smooth == 'median':
-            self.pose_estimation = smooth_median(self.pose_estimation, self.markers, window_len=self.window_length)
+        if apply_smoothing:
+            if self.smooth == 'median':
+                L.debug(f"Applying median smoothing with window length {self.window_length}.")
+                self.pose_estimation = smooth_median(self.pose_estimation, self.markers, window_len=self.window_length)
         
         # Final interpolation to fill any remaining NaNs after cleaning
         self.pose_estimation.interpolate(limit_direction='both', inplace=True)
+        L.info(f"--- Finished data cleaning for {self.patient_id} ---")
 
 
     def normalize_data(self):
@@ -187,18 +205,66 @@ def smooth_median(data, markers, window_len=3):
     return data_smoothed
 
 
-def remove_low_likelihood(data, markers, likelihood):
-    """Setting low likelihood samples to NaN and dropping the likelihood column."""
-    for marker in markers:
-        if (marker, 'likelihood') in data.columns:
-            low_conf_indices = data.loc[:, (marker, 'likelihood')] < likelihood
-            for coord in ['x', 'y', 'z']:
-                if (marker, coord) in data.columns:
-                    data.loc[low_conf_indices, (marker, coord)] = np.nan
+def remove_low_confidence_data(data, markers, confidence_cutoff):
+    """
+    Sets low-confidence samples to NaN and returns the cleaned data and retention percentage.
+    It checks for 'visibility', 'presence', and 'likelihood' columns.
+    """
+    data_copy = data.copy()
     
-    likelihood_cols = [col for col in data.columns if col[1] in ['likelihood', 'visibility', 'presence']]
-    data = data.drop(columns=likelihood_cols)
-    return data
+    # Identify the name of the confidence metric used in the dataframe
+    confidence_metric = None
+    key_markers_to_check = ['right_shoulder', 'left_shoulder', 'right_wrist', 'left_wrist', 'nose']
+    for metric in ['visibility', 'presence', 'likelihood']:
+        if any((marker, metric) in data_copy.columns for marker in key_markers_to_check):
+            confidence_metric = metric
+            break
+            
+    if confidence_metric is None:
+        L.warning("--> LOG: No confidence column found. Skipping confidence filtering.")
+        # Calculate retention based on existing NaNs if any
+        coord_cols = [c for c in data_copy.columns if c[1] in ['x', 'y', 'z']]
+        points_before = data_copy[coord_cols].size
+        points_after = data_copy[coord_cols].notna().sum().sum()
+        retention = (points_after / points_before) * 100 if points_before > 0 else 100.0
+        return data_copy, retention
+
+    L.info(f"--> LOG: Using '{confidence_metric}' as the confidence metric with cutoff {confidence_cutoff:.2f}.")
+
+    # --- CORRECTED LOGIC ---
+    # Iterate through each marker that has a confidence score
+    for marker in markers:
+        confidence_col = (marker, confidence_metric)
+        if confidence_col in data_copy.columns:
+            # Create a boolean mask of all rows where confidence is LOW for this marker
+            low_confidence_mask = data_copy[confidence_col] < confidence_cutoff
+            
+            # Find the coordinate columns for this specific marker
+            marker_coord_cols = [
+                (marker, 'x'),
+                (marker, 'y'),
+                (marker, 'z')
+            ]
+            
+            # For each coordinate column that exists...
+            for col in marker_coord_cols:
+                if col in data_copy.columns:
+                    # ...use the mask to set the low-confidence rows to NaN
+                    data_copy.loc[low_confidence_mask, col] = np.nan
+
+    # --- Calculate retention percentage AFTER modifications ---
+    coord_cols = [c for c in data_copy.columns if c[1] in ['x', 'y', 'z']]
+    points_before = data_copy[coord_cols].size
+    points_after = data_copy[coord_cols].notna().sum().sum()
+    retention_percent = (points_after / points_before) * 100 if points_before > 0 else 100.0
+    
+    L.info(f"--> LOG: Final data retention after cutoff {confidence_cutoff:.2f}: {retention_percent:.2f}%")
+
+    # Drop all possible confidence-related columns after use
+    cols_to_drop = [col for col in data_copy.columns if col[1] in ['likelihood', 'visibility', 'presence']]
+    data_copy = data_copy.drop(columns=cols_to_drop, errors='ignore')
+    
+    return data_copy, retention_percent
 
 def filter_low_frequency(data, markers, fps, low_cut=0):
     return pre_high_pass_filter(data, markers, fps, low_cut=low_cut)
